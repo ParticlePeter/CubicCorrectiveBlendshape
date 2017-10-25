@@ -65,6 +65,7 @@ enum {
 	CIRCULAR,
 	C_SPLINE,
 	M_NURBS,
+	C_TEMP,
 };
 
 
@@ -131,6 +132,177 @@ inline void cylindrical2cartesian( MVector & vec ) {
 	vec.x = vec_x * cos( vec.y );	// - M_PI );
 	vec.y = vec_x * sin( vec.y );	// - M_PI );
 }
+
+
+inline void computeCSpline(
+	MMatrix & mReferenceMatrix,
+	double paramU,
+	double paramV,
+	MItGeometry & mItGeometry,
+	MPointArray * mPointArrays,
+	bool toCartesian
+	) {
+
+	const int tmp_start = 106;
+	const int tmp_count = 4;
+	MVector mc_0[tmp_count];
+	MVector mc_1[tmp_count];
+	MVector mc_2[tmp_count];
+	MVector mc_3[tmp_count];
+	MVector mc_4[tmp_count];
+	MVector md_0[tmp_count];
+	MVector md_1[tmp_count];
+	MVector md_2[tmp_count];
+	MVector md_3[tmp_count];
+	MVector md_4[tmp_count];
+	MPoint  df_0[tmp_count];
+	MPoint  df_1[tmp_count];
+	MPoint  df_2[tmp_count];
+
+
+	unsigned int intParamU = std::min(( int )( paramU ), 3 );	// Must not become 4
+	unsigned int intParamU_1 = ( intParamU + 1 ) % 4;
+
+	double t1 = paramU - intParamU;
+	double t2 = t1 * t1;
+	double t3 = t2 * t1;
+
+	MVector mVecSphere;
+	MPointArray mDifference( 3 ), mD( 3 );
+	MVectorArray mDeltas( 6 );
+	MVectorArray mDeltasCart( 5 );
+
+	for( ; !mItGeometry.isDone(); mItGeometry.next() ) {
+
+		// Get the painted paramV value
+		//double vertexWeight = weightValue( mDataBlock, multiIndex, mItGeometry.index() );
+
+		// Result
+		MVector mResult;
+
+		// Test if cartesian2... and ...2cartesian work properly
+		//mResult = MVector( mItGeometry.position());
+		//cartesian2spherical( mResult );
+		//spherical2cartesian( mResult );
+		//cartesian2cylindrical( mResult );
+		//cylindrical2cartesian( mResult );
+		//mItGeometry.setPosition( mResult );
+		//continue;
+
+
+
+		// 
+		//mDeltasCart[0] = mPointArrays[0][ mItGeometry.index() ] - mItGeometry.position();		// Create delta shape
+		//mDeltas[0] = mDeltasCart[0] * mReferenceMatrix;											// Transforme into refernece matrix space
+		//cartesian2cylindrical( mDeltas[0] );													// Convert to cylindrical coordinates
+		//mDeltas[0].y = fmod( mDeltas[0].y + 4 * M_PI, 2 * M_PI );								// bring into positive phi range
+
+		// Compute delta shape between deformed orignal shape and each target shape
+		// Transform each delta shape into refernce matrix space
+		// Rotat deltas from second to last quadrant into the first quadrant, so that all deltas point into similar
+		for( int i = 0; i < 4; ++i ) {
+			mDeltasCart[i] = mPointArrays[i][ mItGeometry.index() ] - mItGeometry.position();		// Create delta shape
+			mDeltas[i] = mDeltasCart[i] * mReferenceMatrix;											// Transforme into refernece matrix space
+			cartesian2cylindrical( mDeltas[i] );													// Convert to cylindrical coordinates
+			mDeltas[i].y += 2 * M_PI;
+		}
+
+
+		mDeltas[4] = mDeltas[0];
+		if( mDeltas[0].y >  2 * M_PI )
+			mDeltas[0].y -= 2 * M_PI;
+		else
+			mDeltas[4].y += 2 * M_PI;
+
+		{
+			auto mDelta_A = mDeltas[ 1 ];
+			auto mDelta_B = mDeltas[ 3 ];	// -1
+			//mDelta_A.y -= 2 * M_PI;
+			mDelta_B.y -= 2 * M_PI;
+			mResult = 3 * ( mDelta_A - mDelta_B );
+			mDifference[0][0] = mResult.x;
+			mDifference[1][0] = mResult.y;
+			mDifference[2][0] = mResult.z;
+		}
+
+		{
+			auto mDelta_A = mDeltas[ 2 ];
+			auto mDelta_B = mDeltas[ 0 ];
+			//mDelta_A.y += 2 * M_PI;
+			//mDelta_B.y -= 2 * M_PI;
+			mResult = 3 * ( mDelta_A - mDelta_B );
+			mDifference[0][1] = mResult.x;
+			mDifference[1][1] = mResult.y;
+			mDifference[2][1] = mResult.z;
+		}
+
+		{
+			auto mDelta_A = mDeltas[ 3 ];
+			auto mDelta_B = mDeltas[ 1 ];
+			//mDelta_A.y -= 2 * M_PI;
+			//mDelta_B.y -= 2 * M_PI;
+			mResult = 3 * ( mDelta_A - mDelta_B );
+			mDifference[0][2] = mResult.x;
+			mDifference[1][2] = mResult.y;
+			mDifference[2][2] = mResult.z;
+		}
+
+		{
+			auto mDelta_A = mDeltas[ 4 ];
+			auto mDelta_B = mDeltas[ 2 ];
+			//mDelta_A.y -= 2 * M_PI;
+			//mDelta_B.y += 2 * M_PI;
+			mResult = 3 * ( mDelta_A - mDelta_B );
+			mDifference[0][3] = mResult.x;
+			mDifference[1][3] = mResult.y;
+			mDifference[2][3] = mResult.z;
+		}
+
+		auto idx = mItGeometry.index();
+		if( idx >= tmp_start && idx < tmp_start + tmp_count ) {
+			auto ti = idx - tmp_start;
+			mc_0[ti] = mDeltasCart[0];
+			mc_1[ti] = mDeltasCart[1];
+			mc_2[ti] = mDeltasCart[2]; 
+			mc_3[ti] = mDeltasCart[3];
+			mc_4[ti] = mDeltasCart[4];
+			md_0[ti] = mDeltas[0];
+			md_1[ti] = mDeltas[1];
+			md_2[ti] = mDeltas[2];
+			md_3[ti] = mDeltas[3];
+			md_4[ti] = mDeltas[4];
+			df_0[ti] = mDifference[0];
+			df_1[ti] = mDifference[1];
+			df_2[ti] = mDifference[2];
+
+		}
+
+		// Compute cofficiencies
+		for( int i = 0; i < 3; ++i ) {
+			mD[i] = mDifference[i] * matA_inverted;
+		}
+
+		MVector a = mDeltas[ intParamU ];
+		MVector a_1 = mDeltas[ intParamU + 1 ];
+		MVector b( mD[0][ intParamU ], mD[1][ intParamU ], mD[2][ intParamU ] );
+		MVector b_1( mD[0][ intParamU_1 ], mD[1][ intParamU_1 ], mD[2][ intParamU_1 ] );
+		MVector c = 3 * ( a_1 - a ) - 2 * b - b_1;
+		MVector d = 2 * ( a - a_1 ) +     b + b_1;
+
+		// Compute point on spline using cofficiencies
+		mResult = a + b * t1 + c * t2 + d * t3;
+		
+		if( toCartesian )
+			cylindrical2cartesian( mResult );
+
+		mResult = paramV * ( mReferenceMatrix * mResult ) + mItGeometry.position();
+
+		// Set the new output point
+		mItGeometry.setPosition( mResult );
+
+	}
+}
+
 
 
 MStatus CubicBlendNode::initialize() {
@@ -236,6 +408,7 @@ MStatus CubicBlendNode::initialize() {
 	mStatus = mFnEnumAttribute.addField( "Circular", CIRCULAR );
 	mStatus = mFnEnumAttribute.addField( "C-Spline", C_SPLINE );
 	mStatus = mFnEnumAttribute.addField( "M-NURBs" , M_NURBS );
+	mStatus = mFnEnumAttribute.addField( "C-Temp"  , C_TEMP );
 	mStatus = mFnEnumAttribute.setChannelBox( true );
 	addAttribute( mAttr_interpolator );
 	mStatus = attributeAffects( mAttr_interpolator, outputGeom ); MCHECKERRORNORET( mStatus, "Attribute interpolator affects outputGeom" );
@@ -353,7 +526,6 @@ MStatus CubicBlendNode::deform( MDataBlock & mDataBlock, MItGeometry & mItGeomet
 	double rangeU = ( double )numGeometries;
 	double invPaV = 1.0f - paramV;
 
-
 	// Linear deformation
 	if( interp == LINEAR ) {
 
@@ -441,7 +613,6 @@ MStatus CubicBlendNode::deform( MDataBlock & mDataBlock, MItGeometry & mItGeomet
 		}
 	}
 
-
 	// Linear interpolation in (quasi-) cylindrical coordinate space
 	else if( interp == CIRCULAR ) {
 
@@ -471,10 +642,32 @@ MStatus CubicBlendNode::deform( MDataBlock & mDataBlock, MItGeometry & mItGeomet
 	}
 
 
-	// C-Spline (Circular B-Spline) interpolation, B_Spline interpolation in (quasi-) cylindrical coordinates
-	else if( interp == C_SPLINE  ) {
+	// C-Spline (Circular B-Spline) interpolation, B_Spline interpolation in cylindrical coordinates
+	else if( interp == C_SPLINE ) {
 
-		
+		computeCSpline(
+			mReferenceMatrix,
+			paramU,
+			paramV,
+			mItGeometry,
+			& mPointArrays[0],
+			true );
+
+	}
+
+	// C-Spline (Circular B-Spline) interpolation, B_Spline interpolation in (quasi-) cylindrical coordinates
+	else if( interp == C_TEMP ) {
+
+		computeCSpline(
+			mReferenceMatrix,
+			paramU,
+			paramV,
+			mItGeometry,
+			& mPointArrays[0],
+			false );
+
+
+		/*
 		MMatrix mReferTransM = mReferenceMatrix.transpose();
 
 		unsigned int intParamU = std::min(( int )( paramU ), 3 );	// Must not become 4
@@ -536,9 +729,8 @@ MStatus CubicBlendNode::deform( MDataBlock & mDataBlock, MItGeometry & mItGeomet
 
 			// Set the new output point
 			mItGeometry.setPosition( mResult );
-		}
+		}*/
 	}
-
 
 	// Maya NURBs API Spline - very slow!
 	else if( interp == M_NURBS ) {
@@ -573,15 +765,204 @@ MStatus CubicBlendNode::deform( MDataBlock & mDataBlock, MItGeometry & mItGeomet
 		}
 	}
 
-
 	else {
 		delete[] mPointArrays;
 		return MS::kFailure;
 	}
-
 
 	delete[] mPointArrays;
 	return MS::kSuccess;
 
 
 }
+
+/*
+inline void computeCSpline(
+	MMatrix & mReferenceMatrix,
+	double paramU,
+	double paramV,
+	MItGeometry & mItGeometry,
+	MPointArray * mPointArrays,
+	bool toCartesian
+	) {
+
+	const int tmp_start = 106;
+	const int tmp_count = 4;
+	MVector mc_0[tmp_count];
+	MVector mc_1[tmp_count];
+	MVector mc_2[tmp_count];
+	MVector mc_3[tmp_count];
+	MVector mc_4[tmp_count];
+	MVector mc_5[tmp_count];
+	MVector md_0[tmp_count];
+	MVector md_1[tmp_count];
+	MVector md_2[tmp_count];
+	MVector md_3[tmp_count];
+	MVector md_4[tmp_count];
+	MVector md_5[tmp_count];
+	MPoint  df_0[tmp_count];
+	MPoint  df_1[tmp_count];
+	MPoint  df_2[tmp_count];
+
+
+	unsigned int intParamU = std::min(( int )( paramU ), 3 );	// Must not become 4
+	unsigned int intParamU_1 = (( intParamU + 1 ) % 4 ) + 1;
+	intParamU++;
+	intParamU_1++;
+
+	double t1 = paramU - intParamU;
+	double t2 = t1 * t1;
+	double t3 = t2 * t1;
+
+	MVector mVecSphere;
+	MPointArray mDifference( 3 ), mD( 3 );
+	MVectorArray mDeltas( 6 );
+	MVectorArray mDeltasCart( 6 );
+
+	for( ; !mItGeometry.isDone(); mItGeometry.next() ) {
+
+		// Get the painted paramV value
+		//double vertexWeight = weightValue( mDataBlock, multiIndex, mItGeometry.index() );
+
+		// Result
+		MVector mResult;
+
+		// Test if cartesian2... and ...2cartesian work properly
+		//mResult = MVector( mItGeometry.position());
+		//cartesian2spherical( mResult );
+		//spherical2cartesian( mResult );
+		//cartesian2cylindrical( mResult );
+		//cylindrical2cartesian( mResult );
+		//mItGeometry.setPosition( mResult );
+		//continue;
+
+
+
+		// Compute delta shape between deformed orignal shape and each target shape
+		// Transform each delta shape into refernce matrix space
+		// Rotat deltas from second to last quadrant into the first quadrant, so that all deltas point into similar
+		for( int i = 1; i < 5; ++i ) {
+			mDeltasCart[i] = mPointArrays[i-1][ mItGeometry.index() ] - mItGeometry.position();		// Create delta shape
+			mDeltas[i] = mDeltasCart[i] * mReferenceMatrix;														// Transforme into refernece matrix space
+			cartesian2cylindrical( mDeltas[i] );												// Convert to cylindrical coordinates
+
+			//mDeltas[i].y = fmod( mDeltas[i].y + M_PI, 2 * M_PI ) - M_PI;
+			mDeltas[i].y += 2 * M_PI;
+			// Todo(pp): actually convert to cylindrical, and then add ( 2 - i * 0.5 ) * M_PI to cylindrical phi
+			//mDeltas[i].y -= i * 0.5 * M_PI;			// Rotate the delta vectors into the first spherical quadrant
+		}
+
+
+		//for( int i = 2; i < 4; ++i ) {
+		//	auto mDelta_A = mDeltas[ ( i + 1 + 4 ) % 4 ];
+		//	auto mDelta_B = mDeltas[ ( i - 1 + 4 ) % 4 ];
+		//	//mDelta_A.y -= i * 0.5 * M_PI;
+		//	//mDelta_B.y -= i * 0.5 * M_PI;
+		//	mResult = 3 * ( mDelta_A - mDelta_B );
+
+		//	mDifference[0][i] = mResult.x;
+		//	mDifference[1][i] = mResult.y;
+		//	mDifference[2][i] = mResult.z;
+		//}
+
+		mDeltas[5] = mDeltas[1];
+		if( mDeltas[1].y >  2 * M_PI )
+			mDeltas[1].y -= 2 * M_PI;
+		else
+			mDeltas[5].y += 2 * M_PI;
+
+		{
+			auto mDelta_A = mDeltas[ 2 ];
+			auto mDelta_B = mDeltas[ 4 ];	// -1
+			//mDelta_A.y -= 2 * M_PI;
+			mDelta_B.y -= 2 * M_PI;
+			mResult = 3 * ( mDelta_A - mDelta_B );
+			mDifference[0][0] = mResult.x;
+			mDifference[1][0] = mResult.y;
+			mDifference[2][0] = mResult.z;
+		}
+
+		{
+			auto mDelta_A = mDeltas[ 3 ];
+			auto mDelta_B = mDeltas[ 1 ];
+			//mDelta_A.y += 2 * M_PI;
+			//mDelta_B.y -= 2 * M_PI;
+			mResult = 3 * ( mDelta_A - mDelta_B );
+			mDifference[0][1] = mResult.x;
+			mDifference[1][1] = mResult.y;
+			mDifference[2][1] = mResult.z;
+		}
+
+		{
+			auto mDelta_A = mDeltas[ 4 ];
+			auto mDelta_B = mDeltas[ 2 ];
+			//mDelta_A.y -= 2 * M_PI;
+			//mDelta_B.y -= 2 * M_PI;
+			mResult = 3 * ( mDelta_A - mDelta_B );
+			mDifference[0][2] = mResult.x;
+			mDifference[1][2] = mResult.y;
+			mDifference[2][2] = mResult.z;
+		}
+
+		{
+			auto mDelta_A = mDeltas[ 5 ];
+			auto mDelta_B = mDeltas[ 3 ];
+			//mDelta_A.y -= 2 * M_PI;
+			//mDelta_B.y += 2 * M_PI;
+			mResult = 3 * ( mDelta_A - mDelta_B );
+			mDifference[0][3] = mResult.x;
+			mDifference[1][3] = mResult.y;
+			mDifference[2][3] = mResult.z;
+		}
+
+		auto idx = mItGeometry.index();
+		if( idx >= tmp_start && idx < tmp_start + tmp_count ) {
+			auto ti = idx - tmp_start;
+			mc_0[ti] = mDeltasCart[0];
+			mc_1[ti] = mDeltasCart[1];
+			mc_2[ti] = mDeltasCart[2]; 
+			mc_3[ti] = mDeltasCart[3];
+			mc_4[ti] = mDeltasCart[4];
+			mc_5[ti] = mDeltasCart[5];
+			md_0[ti] = mDeltas[0];
+			md_1[ti] = mDeltas[1];
+			md_2[ti] = mDeltas[2];
+			md_3[ti] = mDeltas[3];
+			md_4[ti] = mDeltas[4];
+			md_5[ti] = mDeltas[5];
+			df_0[ti] = mDifference[0];
+			df_1[ti] = mDifference[1];
+			df_2[ti] = mDifference[2];
+
+		}
+
+		// Compute cofficiencies
+		for( int i = 0; i < 3; ++i ) {
+			mD[i] = mDifference[i] * matA_inverted;
+		}
+
+		// Compute Coefficiencies
+		MVector a = mDeltas[ intParamU ];
+		MVector a_1 = mDeltas[ intParamU + 1 ];
+		MVector b( mD[0][ intParamU ], mD[1][ intParamU ], mD[2][ intParamU ] );
+		MVector b_1( mD[0][ intParamU_1 ], mD[1][ intParamU_1 ], mD[2][ intParamU_1 ] );
+		MVector c = 3 * ( a_1 - a ) - 2 * b - b_1;
+		MVector d = 2 * ( a - a_1 ) +     b + b_1;
+
+		mResult = a + b * t1 + c * t2 + d * t3;
+
+		//mResult = mResult.rotateBy( MVector::kZaxis, phi );
+		//mResult.y += phi;
+		if( toCartesian )
+			cylindrical2cartesian( mResult );
+
+		mResult = mReferenceMatrix * mResult;
+
+		mResult = paramV * mResult + mItGeometry.position();
+
+		// Set the new output point
+		mItGeometry.setPosition( mResult );
+
+	}
+}
+*/
